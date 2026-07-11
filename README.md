@@ -14,6 +14,27 @@ uvicorn app.main:app --reload
 
 API docs: http://127.0.0.1:8000/docs
 
+## Creating the first admin
+
+Two ways, pick whichever fits your setup:
+
+1. **CLI script** (`create_admin.py`) -- run it manually, locally or via
+   Render's Shell tab. Good for a one-time setup or adding more admins later.
+
+2. **Auto-bootstrap via env vars** -- set `ADMIN_USERNAME` and
+   `ADMIN_PASSWORD` (see `.env.example`) as environment variables (e.g. in
+   Render's dashboard). On startup, `main.py` calls
+   `auth_service.ensure_default_admin`, which creates that admin **only if
+   the admins table is completely empty**. This is meant for platforms with
+   an ephemeral filesystem (like Render without a persistent disk), where
+   the database gets wiped on every redeploy and you don't want to open a
+   shell each time.
+
+   Safe to leave these env vars set permanently: once an admin exists,
+   `ensure_default_admin` becomes a no-op on every subsequent startup. It
+   will never overwrite an existing admin's password -- change passwords
+   through the app itself, not by editing env vars.
+
 ## What's here
 
 Matches the architecture doc's structure (`models/`, `schemas/`, `routers/`,

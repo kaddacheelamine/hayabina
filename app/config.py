@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     upload_dir: str = "uploads"
     max_upload_size_mb: int = 5
 
+    # Optional: if set, main.py creates this admin automatically at startup
+    # if no admin exists yet in the database. Leave unset to disable.
+    admin_username: str | None = None
+    admin_password: str | None = None
+    admin_role: str = "super_admin"
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     @property
