@@ -14,6 +14,36 @@ uvicorn app.main:app --reload
 
 API docs: http://127.0.0.1:8000/docs
 
+## Product fields: material, season, discount
+
+Products carry three extra fields beyond the original spec:
+
+- **`material`** -- free text (e.g. "Cotton", "Wool", "100% Polyester").
+- **`season`** -- one of `SUMMER`, `WINTER`, `SPRING`, `AUTUMN`, `ALL_SEASON`, or `null`.
+- **`discount_percentage`** -- a ratio from `0` (no discount) to `1` (100% off),
+  e.g. `0.20` = 20% off. Validated at the API layer (rejects anything outside 0-1).
+
+Every product response also includes a computed **`final_price`**
+(`price * (1 - discount_percentage)`, rounded to 2 decimals) -- use this as
+the price to actually display, and show `price` crossed out only when
+`discount_percentage > 0`.
+
+To turn a discount on/off later, just `PUT` the product with a new
+`discount_percentage` -- e.g. `{"discount_percentage": "0.30"}` to start a
+30%-off sale, or `{"discount_percentage": "0"}` to end it. No separate
+endpoint needed.
+
+**If you already have a deployed database from before this change**, run
+the migration once against it (adds the missing columns without touching
+existing data):
+```bash
+python3 migrate_add_product_fields.py
+```
+On Render: run this from the Shell tab, once, after deploying the updated
+code. Safe to run more than once (it skips columns that already exist).
+Brand-new databases don't need this -- `create_all` already includes the
+new columns.
+
 ## Creating the first admin
 
 Two ways, pick whichever fits your setup:

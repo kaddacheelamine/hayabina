@@ -18,3 +18,11 @@ class OrderStatus(str, enum.Enum):
 class AdminRole(str, enum.Enum):
     SUPER_ADMIN = "super_admin"
     STAFF = "staff"
+
+
+class Season(str, enum.Enum):
+    SUMMER = "SUMMER"
+    WINTER = "WINTER"
+    SPRING = "SPRING"
+    AUTUMN = "AUTUMN"
+    ALL_SEASON = "ALL_SEASON"
