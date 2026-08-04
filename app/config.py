@@ -12,7 +12,7 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite:///./database.db"
 
-    allowed_origins: str = "http://localhost:3000,http://localhost:5173"
+    allowed_origins: str = "*"
 
     upload_dir: str = "uploads"
     max_upload_size_mb: int = 5
