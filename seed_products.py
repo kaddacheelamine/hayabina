@@ -1,9 +1,13 @@
 """
 seed_products.py
 
-Connects to the Storefront API and creates random test products
-(with description, category, color/size variants, and 2-3 generated
-placeholder images per product) for demo/testing purposes.
+Connects to the Storefront API and creates random test products for
+demo/testing purposes -- each with a description, category, material,
+season, discount, and 1-3 "color groups". Each color group is a set of
+1-2 generated placeholder images tagged with that color, plus the
+matching size/quantity variants for that color. This mirrors the real
+admin workflow: upload a color's photos together (tagged with that
+color), then set the sizes available in that color.
 
 No external image service needed -- images are generated locally with
 Pillow (a solid color background + the product name + an angle label),
@@ -18,7 +22,6 @@ Options:
     --username       Admin username (required)
     --password       Admin password (required)
     --count          Number of products to create (default: 10)
-    --images-per-product  Fixed image count per product (default: random 2-3)
     --seed           Random seed, for reproducible runs (optional)
 """
 
@@ -122,15 +125,19 @@ class ApiClient:
         )
         resp.raise_for_status()
 
-    def upload_images(self, product_id: int, images: list[tuple[bytes, str]]) -> None:
-        """Uploads several images for the same product in a single request.
-        `images` is a list of (image_bytes, filename) tuples."""
+    def upload_images(self, product_id: int, images: list[tuple[bytes, str]], color: str | None = None) -> None:
+        """Uploads several images for the same product/color in a single
+        request. `images` is a list of (image_bytes, filename) tuples.
+        All files in this call get tagged with the same `color` --
+        matching the real admin workflow of uploading one color's photos
+        at a time."""
         files = [
             ("files", (filename, image_bytes, "image/png"))
             for image_bytes, filename in images
         ]
+        data = {"color": color} if color else {}
         resp = self.session.post(
-            f"{self.base_url}/api/products/{product_id}/images", files=files
+            f"{self.base_url}/api/products/{product_id}/images", files=files, data=data
         )
         resp.raise_for_status()
 
@@ -199,7 +206,7 @@ def random_discount() -> float:
     return round(random.choice([0.10, 0.15, 0.20, 0.25, 0.30, 0.50]), 2)
 
 
-def seed(client: ApiClient, count: int, images_per_product: int | None) -> None:
+def seed(client: ApiClient, count: int) -> None:
     category_ids = {name: client.get_or_create_category(name) for name in CATEGORIES}
     log(f"Categories ready: {list(category_ids.keys())}")
 
@@ -222,29 +229,32 @@ def seed(client: ApiClient, count: int, images_per_product: int | None) -> None:
             f"({category_name}, {material}, {season}, ${price}{discount_note})"
         )
 
-        # 1-3 random color/size variants per product, no duplicates.
-        num_variants = random.randint(1, 3)
-        used_combos = set()
-        for _ in range(num_variants):
-            color = random.choice(COLORS)
-            size = random.choice(SIZES)
-            if (color, size) in used_combos:
-                continue
-            used_combos.add((color, size))
-            quantity = random.randint(0, 20)
-            client.create_variant(product_id, color, size, quantity)
-            log(f"    variant: {color}/{size} x{quantity}")
+        # 1-3 color groups per product. Each color group = its own set of
+        # images (tagged with that color) + its own set of size variants --
+        # this mirrors the real workflow: a "Red" pajama and a "Green"
+        # pajama are visually distinct products even though they share a
+        # name/price/description, so each gets its own photos and its own
+        # available sizes.
+        num_colors = random.randint(1, 3)
+        colors = random.sample(COLORS, k=num_colors)
 
-        # 2-3 images per product by default (fixed count if --images-per-product given),
-        # each with a different angle label, uploaded together in one request.
-        num_images = images_per_product if images_per_product else random.randint(2, 3)
-        labels = random.sample(IMAGE_ANGLE_LABELS, k=min(num_images, len(IMAGE_ANGLE_LABELS)))
-        images = [
-            (generate_placeholder_image(name, label), f"product_{product_id}_{j}.png")
-            for j, label in enumerate(labels)
-        ]
-        client.upload_images(product_id, images)
-        log(f"    uploaded {len(images)} images: {', '.join(labels)}")
+        for color in colors:
+            # 1-3 sizes available in this color, each with its own stock.
+            sizes_for_color = random.sample(SIZES, k=random.randint(1, len(SIZES)))
+            for size in sizes_for_color:
+                quantity = random.randint(0, 20)
+                client.create_variant(product_id, color, size, quantity)
+            log(f"    color '{color}': sizes {sizes_for_color}")
+
+            # 1-2 images for this color, uploaded together tagged with it.
+            num_images = random.randint(1, 2)
+            labels = random.sample(IMAGE_ANGLE_LABELS, k=num_images)
+            images = [
+                (generate_placeholder_image(f"{name} ({color})", label), f"product_{product_id}_{color}_{j}.png")
+                for j, label in enumerate(labels)
+            ]
+            client.upload_images(product_id, images, color=color)
+            log(f"        uploaded {len(images)} '{color}' images: {', '.join(labels)}")
 
 
 def main():
@@ -253,8 +263,6 @@ def main():
     parser.add_argument("--username", required=True)
     parser.add_argument("--password", required=True)
     parser.add_argument("--count", type=int, default=10)
-    parser.add_argument("--images-per-product", type=int, default=None,
-                         help="Fixed number of images per product (default: random 2-3)")
     parser.add_argument("--seed", type=int, default=None)
     args = parser.parse_args()
 
@@ -269,7 +277,7 @@ def main():
         sys.exit(1)
 
     try:
-        seed(client, args.count, args.images_per_product)
+        seed(client, args.count)
     except requests.HTTPError as exc:
         log(f"Request failed: {exc}")
         if exc.response is not None:

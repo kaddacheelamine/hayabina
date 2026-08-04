@@ -23,16 +23,16 @@ def _validate_image(file: UploadFile, raw_bytes: bytes) -> None:
         )
 
 
-def save_product_image(file: UploadFile) -> str:
-    """Saves an uploaded image to uploads/products/ and returns the relative path
-    stored in the DB (e.g. 'products/<uuid>.jpg')."""
+def save_image(file: UploadFile, subdir: str) -> str:
+    """Saves an uploaded image to uploads/<subdir>/ and returns the relative
+    path stored in the DB (e.g. 'banners/<uuid>.jpg')."""
     raw_bytes = file.file.read()
     _validate_image(file, raw_bytes)
 
     ext = os.path.splitext(file.filename or "")[1].lower() or ".jpg"
     filename = f"{uuid.uuid4().hex}{ext}"
 
-    target_dir = os.path.join(settings.upload_dir, "products")
+    target_dir = os.path.join(settings.upload_dir, subdir)
     os.makedirs(target_dir, exist_ok=True)
     full_path = os.path.join(target_dir, filename)
 
@@ -47,10 +47,26 @@ def save_product_image(file: UploadFile) -> str:
         os.remove(full_path)
         raise HTTPException(status_code=400, detail="Invalid image file") from exc
 
-    return f"products/{filename}"
+    return f"{subdir}/{filename}"
 
 
-def delete_product_image_file(relative_path: str) -> None:
+def save_product_image(file: UploadFile) -> str:
+    """Saves an uploaded image to uploads/products/. Thin wrapper kept for
+    backwards compatibility with existing callers."""
+    return save_image(file, "products")
+
+
+def save_banner_image(file: UploadFile) -> str:
+    """Saves an uploaded image to uploads/banners/ (used for site-wide
+    branding, e.g. the homepage hero image)."""
+    return save_image(file, "banners")
+
+
+def delete_image_file(relative_path: str) -> None:
     full_path = os.path.join(settings.upload_dir, relative_path)
     if os.path.exists(full_path):
         os.remove(full_path)
+
+
+# Kept as an alias -- existing callers use this name.
+delete_product_image_file = delete_image_file

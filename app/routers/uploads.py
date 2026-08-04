@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, UploadFile, File, status
+from fastapi import APIRouter, Depends, Form, UploadFile, File, status
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_db, get_current_admin
@@ -27,6 +27,15 @@ def upload_generic_image(file: UploadFile = File(...), _=Depends(get_current_adm
 def upload_product_images(
     product_id: int,
     files: list[UploadFile] = File(...),
+    color: str | None = Form(
+        None,
+        description=(
+            "Which color these images represent (e.g. 'Red'). All files in "
+            "this call get tagged with the same color -- upload each color's "
+            "photos in a separate call. Leave empty for generic/non-color-"
+            "specific images."
+        ),
+    ),
     db: Session = Depends(get_db),
     _=Depends(get_current_admin),
 ):
@@ -34,7 +43,7 @@ def upload_product_images(
     created = []
     for file in files:
         path = upload_service.save_product_image(file)
-        image = ProductImage(product_id=product.id, image_path=path)
+        image = ProductImage(product_id=product.id, image_path=path, color=color)
         db.add(image)
         created.append(image)
     db.commit()

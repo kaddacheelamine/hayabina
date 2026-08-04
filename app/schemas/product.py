@@ -11,6 +11,7 @@ from app.schemas.category import CategoryOut
 class ProductImageOut(BaseModel):
     id: int
     image_path: str
+    color: str | None = None
 
     model_config = {"from_attributes": True}
 

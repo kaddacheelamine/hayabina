@@ -14,6 +14,95 @@ uvicorn app.main:app --reload
 
 API docs: http://127.0.0.1:8000/docs
 
+## Site branding: `/api/store-info`
+
+A dedicated endpoint the frontend calls to get the homepage title,
+description, and banner image -- so the storeowner can change these
+without a code deploy.
+
+- `GET /api/store-info` -- public. Returns `{title, description, banner_image_path}`.
+  Never 404s -- returns nulls if nothing's been set yet.
+- `PUT /api/store-info` -- admin only, **multipart form** (not JSON), so
+  the banner image can be updated in the same request as the text:
+  ```bash
+  curl -X PUT $API/api/store-info \
+    -H "Authorization: Bearer $TOKEN" \
+    -F "title=My Store" \
+    -F "description=Best pajamas in town" \
+    -F "image=@banner.jpg"
+  ```
+  Send only the fields you're changing -- omitted fields are left as-is.
+
+`banner_image_path` follows the same convention as product images: it's a
+relative path, not a full URL. Build the real URL the same way:
+`${API_BASE_URL}/uploads/${banner_image_path}`.
+
+## Homepage sections: `/api/sections`
+
+Lets the store owner create curated homepage blocks (e.g. "Summer
+Collection", "New Arrivals"), each with a title and one or more
+categories:
+
+- `GET /api/sections` -- public. Returns e.g.:
+  ```json
+  [{"id": 1, "title": "Summer Collection", "display_order": 1,
+    "categories": [{"id": 2, "name": "Pajamas"}, {"id": 5, "name": "Loungewear"}]}]
+  ```
+- `POST /api/sections` -- admin, `{"title": "...", "category_ids": [2, 5], "display_order": 1}`.
+- `PUT /api/sections/{id}` / `DELETE /api/sections/{id}` -- admin.
+
+A section only stores *which categories* it features, not products
+directly -- the frontend fetches actual products per category via the
+existing `GET /api/products?category_id=...`. This keeps sections
+decoupled from product data (adding/removing products from a category
+automatically updates what a section shows, with no extra step).
+
+## Picking a product variant by image, not a color swatch
+
+`ProductImage` now has a `color` field. Upload each color's photos
+together, tagged with that color:
+```bash
+curl -X POST $API/api/products/{id}/images \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "files=@red_front.jpg" -F "files=@red_back.jpg" -F "color=Red"
+
+curl -X POST $API/api/products/{id}/images \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "files=@green_front.jpg" -F "color=Green"
+```
+
+On `GET /api/products/{id}`, `images` now includes each image's `color`,
+so the frontend can group them:
+```jsx
+const imagesByColor = {};
+product.images.forEach(img => {
+  (imagesByColor[img.color] ??= []).push(img);
+});
+```
+
+Frontend flow this enables (matches how the store owner described it):
+1. Show the images grouped by color -- the customer taps a photo, which
+   *is* the color selection. No separate color dropdown/swatch needed,
+   since the color is already visible in the photo.
+2. Once a color is picked (via its image), filter `product.variants`
+   where `variant.color === selectedColor` to get the sizes available
+   **in that color specifically** -- sizes are the only thing the
+   customer still explicitly chooses.
+
+Note there's no foreign key between `ProductImage.color` and
+`ProductVariant.color` -- both are just matching strings. This is
+intentional: images and variants are uploaded/created independently
+(you might upload a color's photos before deciding all its sizes), and
+one "Red" image can apply to every Red/S, Red/M, Red/L variant without
+needing a separate image per size.
+
+**If you already have a deployed database from before this change**, run:
+```bash
+python3 migrate_add_image_color.py
+```
+(same rules as the other migration script below -- safe to re-run, run
+once from Render's Shell tab after deploying).
+
 ## Product fields: material, season, discount
 
 Products carry three extra fields beyond the original spec:

@@ -5,7 +5,10 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.database import Base, engine, SessionLocal
 from app import models  # noqa: F401  -- ensures all models are registered before create_all
-from app.routers import auth, categories, products, variants, orders, uploads, dashboard, settings as settings_router
+from app.routers import (
+    auth, categories, products, variants, orders, uploads, dashboard,
+    settings as settings_router, sections, store_info,
+)
 from app.services.auth_service import ensure_default_admin
 
 # Creates tables if they don't exist yet. For real schema evolution over time,
@@ -24,9 +27,15 @@ finally:
 
 app = FastAPI(title=settings.app_name, debug=settings.debug)
 
+# Wildcard support: browsers reject allow_credentials=True combined with
+# allow_origins=["*"]. Since auth here is a Bearer JWT (not cookies), we
+# don't actually need credentialed CORS requests -- so when ALLOWED_ORIGINS
+# is set to "*" we simply drop allow_credentials instead of restricting it.
+_wildcard = "*" in settings.allowed_origins_list
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"] if _wildcard else settings.allowed_origins_list,
+    allow_credentials=not _wildcard,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -41,6 +50,8 @@ app.include_router(orders.router)
 app.include_router(uploads.router)
 app.include_router(dashboard.router)
 app.include_router(settings_router.router)
+app.include_router(sections.router)
+app.include_router(store_info.router)
 
 
 @app.get("/api/health")
