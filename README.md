@@ -37,6 +37,163 @@ without a code deploy.
 relative path, not a full URL. Build the real URL the same way:
 `${API_BASE_URL}/uploads/${banner_image_path}`.
 
+## Variants are the sellable unit
+
+This is the core data model, and it changed from earlier -- **a variant now
+carries its own name, one color, one photo, and its own list of sizes**.
+A "Red" version of a product and a "Green" version are two separate
+variants, even though they share the parent product's name/price/description.
+
+```
+Product (name, price, description, material, season, discount...)
+  └─ Variant (name [unique store-wide], color, one image)
+       └─ sizes: [{size, quantity}, {size, quantity}, ...]
+```
+
+There is **no separate product-level image list** -- a product's photo
+gallery is simply the union of each of its variants' single image. There's
+also no `ProductImage` table anymore.
+
+### Creating a variant
+
+```bash
+curl -X POST $API/api/products/{product_id}/variants \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{
+    "name": "Classic Pajama Set - Red",
+    "color": "Red",
+    "sizes": [{"size": "S", "quantity": 5}, {"size": "M", "quantity": 8}]
+  }'
+```
+- `name` must be unique **across the whole store**, not just within one
+  product -- creating a second variant anywhere with the same name (case
+  insensitive) gets a `409`. (If you actually want uniqueness scoped per
+  product instead, say so -- it's a one-line change.)
+- `sizes` is required, at least one entry. Different variants of the same
+  product can have completely different size lists -- that's expected
+  (e.g. Red comes in S/M/L, Green only comes in M).
+
+### Setting the variant's photo
+
+Separate endpoint, since it's a file upload:
+```bash
+curl -X PUT $API/api/variants/{variant_id}/image \
+  -H "Authorization: Bearer $TOKEN" -F "file=@red_photo.jpg"
+```
+Calling it again replaces the photo (the old file is deleted automatically).
+
+### Updating / deleting a variant
+
+```bash
+PUT /api/variants/{id}     # update name, color, and/or sizes (JSON)
+DELETE /api/variants/{id}  # deletes the variant, its sizes, and its image file
+```
+`sizes` in a `PUT` **replaces the entire list** -- send the full set of
+sizes you want, not just the ones changing. This keeps the semantics
+simple and unambiguous (no guessing whether an omitted size should be
+kept or removed).
+
+### What the frontend gets back
+
+```json
+{
+  "id": 1,
+  "name": "Classic Pajama Set",
+  "price": "49.99",
+  "colors": ["Red", "Green"],
+  "stock": 22,
+  "variants": [
+    {
+      "id": 1, "name": "Classic Pajama Set - Red", "color": "Red",
+      "image_path": "products/abc123.jpg",
+      "sizes": [{"size": "S", "quantity": 5}, {"size": "M", "quantity": 8}],
+      "total_quantity": 13, "is_out_of_stock": false
+    },
+    {
+      "id": 2, "name": "Classic Pajama Set - Green", "color": "Green",
+      "image_path": "products/def456.jpg",
+      "sizes": [{"size": "M", "quantity": 6}],
+      "total_quantity": 6, "is_out_of_stock": false
+    }
+  ]
+}
+```
+
+Frontend flow this is built for:
+1. Show each variant's photo (`variants[i].image_path`) as a tappable
+   thumbnail -- tapping one *is* the color selection, since the color is
+   already visible in the photo. No separate color swatch/dropdown needed.
+2. Once a variant (photo) is picked, show `variants[i].sizes` as the size
+   options -- that's the only thing the customer still explicitly chooses.
+
+### Ordering: product + variant + size + quantity
+
+```json
+POST /api/orders
+{
+  "customer": {...},
+  "delivery_type": "HOME", "wilaya": "...", "commune": "...",
+  "items": [
+    {"product_id": 1, "variant_id": 1, "size": "M", "quantity": 2}
+  ]
+}
+```
+The order response's items now include everything needed to display the
+order without extra lookups:
+```json
+{"product_id": 1, "product_name": "Classic Pajama Set",
+ "variant_id": 1, "variant_name": "Classic Pajama Set - Red",
+ "size": "M", "quantity": 2, "price": "49.99"}
+```
+Stock deduction/restoration on confirm/cancel now happens against the
+specific `(variant_id, size)` combination, not the variant as a whole --
+ordering 2 in size M only affects M's quantity, not S or L.
+
+### Migrating an existing database
+
+This is a structural change (variants gain `name`/`image_path` and lose
+`size`/`quantity`; a new `variant_sizes` table holds those instead; the
+old `product_images` table is gone; `order_items` gains a `size` column).
+There's no sensible way to auto-invent the missing `name`s for old
+variant rows, so the migration is necessarily destructive to
+variant/image/order-item data specifically:
+
+```bash
+python3 migrate_v3_variant_restructure.py
+```
+It asks for a typed `yes` confirmation, shows exactly which tables it's
+about to drop, and **keeps** your products, categories, customers, orders
+(the order records themselves), admins, sections, and site_info untouched.
+Read the script's docstring before running it.
+
+**If you're deploying on Render without a persistent disk** (the default,
+per the ephemeral-filesystem discussion earlier): your database is already
+wiped on every redeploy, so there's almost certainly no real data worth
+preserving here -- just delete `database.db` and let `create_all` build
+everything fresh instead of running this script at all.
+
+## Site branding: `/api/store-info`
+
+A dedicated endpoint the frontend calls to get the homepage title,
+description, and banner image -- so the storeowner can change these
+without a code deploy.
+
+- `GET /api/store-info` -- public. Returns `{title, description, banner_image_path}`.
+  Never 404s -- returns nulls if nothing's been set yet.
+- `PUT /api/store-info` -- admin only, **multipart form** (not JSON), so
+  the banner image can be updated in the same request as the text:
+  ```bash
+  curl -X PUT $API/api/store-info \
+    -H "Authorization: Bearer $TOKEN" \
+    -F "title=My Store" \
+    -F "description=Best pajamas in town" \
+    -F "image=@banner.jpg"
+  ```
+  Send only the fields you're changing -- omitted fields are left as-is.
+
+`banner_image_path` follows the same convention as variant images: it's a
+relative path, not a full URL. Build the real URL the same way:
+`${API_BASE_URL}/uploads/${banner_image_path}`.
+
 ## Homepage sections: `/api/sections`
 
 Lets the store owner create curated homepage blocks (e.g. "Summer
@@ -56,52 +213,6 @@ directly -- the frontend fetches actual products per category via the
 existing `GET /api/products?category_id=...`. This keeps sections
 decoupled from product data (adding/removing products from a category
 automatically updates what a section shows, with no extra step).
-
-## Picking a product variant by image, not a color swatch
-
-`ProductImage` now has a `color` field. Upload each color's photos
-together, tagged with that color:
-```bash
-curl -X POST $API/api/products/{id}/images \
-  -H "Authorization: Bearer $TOKEN" \
-  -F "files=@red_front.jpg" -F "files=@red_back.jpg" -F "color=Red"
-
-curl -X POST $API/api/products/{id}/images \
-  -H "Authorization: Bearer $TOKEN" \
-  -F "files=@green_front.jpg" -F "color=Green"
-```
-
-On `GET /api/products/{id}`, `images` now includes each image's `color`,
-so the frontend can group them:
-```jsx
-const imagesByColor = {};
-product.images.forEach(img => {
-  (imagesByColor[img.color] ??= []).push(img);
-});
-```
-
-Frontend flow this enables (matches how the store owner described it):
-1. Show the images grouped by color -- the customer taps a photo, which
-   *is* the color selection. No separate color dropdown/swatch needed,
-   since the color is already visible in the photo.
-2. Once a color is picked (via its image), filter `product.variants`
-   where `variant.color === selectedColor` to get the sizes available
-   **in that color specifically** -- sizes are the only thing the
-   customer still explicitly chooses.
-
-Note there's no foreign key between `ProductImage.color` and
-`ProductVariant.color` -- both are just matching strings. This is
-intentional: images and variants are uploaded/created independently
-(you might upload a color's photos before deciding all its sizes), and
-one "Red" image can apply to every Red/S, Red/M, Red/L variant without
-needing a separate image per size.
-
-**If you already have a deployed database from before this change**, run:
-```bash
-python3 migrate_add_image_color.py
-```
-(same rules as the other migration script below -- safe to re-run, run
-once from Render's Shell tab after deploying).
 
 ## Product fields: material, season, discount
 
@@ -161,15 +272,16 @@ Matches the architecture doc's structure (`models/`, `schemas/`, `routers/`,
 deliberate deviations from the original spec, based on issues that would
 have caused bugs in production:
 
-- **`Product.stock` is computed, not stored.** It's a property that sums
-  `ProductVariant.quantity`, so there's one source of truth for inventory
-  instead of two numbers that can drift apart.
+- **`Product.stock` is computed, not stored.** It sums every
+  `VariantSize.quantity` across all of a product's variants, so there's
+  one source of truth for inventory instead of numbers that can drift apart.
 - **Stock is only touched on status transitions**, centralized in
   `services/order_service.py::update_order_status`. Placing an order
   (`POST /api/orders`) validates availability but doesn't reserve/deduct
-  anything. Deduction happens the moment an order moves to `CONFIRMED`.
-  If a confirmed (or later) order is then `CANCELLED`, the stock it had
-  consumed is automatically restored.
+  anything. Deduction happens the moment an order moves to `CONFIRMED`,
+  against the specific `(variant, size)` ordered. If a confirmed (or
+  later) order is then `CANCELLED`, the stock it had consumed is
+  automatically restored to that same `(variant, size)`.
 - **Status transitions are restricted** to a defined graph (see
   `_ALLOWED_TRANSITIONS` in `order_service.py`) so you can't, e.g., move a
   `CANCELLED` order back to `CONFIRMED` by mistake.
@@ -179,11 +291,9 @@ have caused bugs in production:
 - **Admin has a `role` field** (`super_admin` / `staff`) even though
   there's only one admin type in the spec — cheap to add now, painful to
   migrate in later once there's real data.
-- Image upload has two endpoints, per the spec: a generic
-  `POST /api/upload` (returns a path only) and
-  `POST /api/products/{id}/images` which saves the file(s) *and* creates
-  the `ProductImage` row in one step — safer, since it avoids the
-  orphaned-file risk of uploading first and linking separately.
+- Variant images are set via a dedicated `PUT /api/variants/{id}/image`
+  endpoint (one photo per variant) rather than a generic product-images
+  upload — see "Variants are the sellable unit" above for why.
 
 ## Known limitations worth knowing about
 

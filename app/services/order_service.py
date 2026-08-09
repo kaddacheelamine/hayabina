@@ -27,11 +27,16 @@ _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     OrderStatus.CANCELLED.value: set(),
 }
 
+_ITEM_LOAD_OPTIONS = (
+    joinedload(Order.items).joinedload(OrderItem.product),
+    joinedload(Order.items).joinedload(OrderItem.variant),
+)
+
 
 def get_order_or_404(db: Session, order_id: int) -> Order:
     order = (
         db.query(Order)
-        .options(joinedload(Order.items), joinedload(Order.customer))
+        .options(joinedload(Order.customer), *_ITEM_LOAD_OPTIONS)
         .filter(Order.id == order_id)
         .first()
     )
@@ -49,11 +54,12 @@ def create_order(db: Session, payload: OrderCreate) -> Order:
 
     NOTE ON CONCURRENCY: SQLite doesn't support row-level locking (SELECT ...
     FOR UPDATE), so this availability check has a theoretical race window
-    between two simultaneous orders for the last unit of a variant. That's
-    fine for a single-admin storefront processing confirmations manually
-    (the real deduction + final check happens at confirm_order, which will
-    reject the second one atomically). If this ever moves to Postgres/MySQL
-    under real concurrent load, add SELECT FOR UPDATE in confirm_order.
+    between two simultaneous orders for the last unit of a variant/size.
+    That's fine for a single-admin storefront processing confirmations
+    manually (the real deduction + final check happens at confirm_order,
+    which will reject the second one atomically). If this ever moves to
+    Postgres/MySQL under real concurrent load, add SELECT FOR UPDATE in
+    confirm_order.
     """
     customer = Customer(
         first_name=payload.customer.first_name,
@@ -89,13 +95,15 @@ def create_order(db: Session, payload: OrderCreate) -> Order:
                 detail=f"Variant {item.variant_id} not found for product {item.product_id}",
             )
 
-        # Soft check only -- see note above. Doesn't reserve stock.
-        if variant.quantity < item.quantity:
+        # Soft check only -- see note above. Doesn't reserve stock. Also
+        # 404s here if the size doesn't exist at all for this variant.
+        variant_size = stock_service.get_variant_size_or_404(db, variant.id, item.size)
+        if variant_size.quantity < item.quantity:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
-                    f"Not enough stock for {product.name} "
-                    f"({variant.color}/{variant.size}): {variant.quantity} available"
+                    f"Not enough stock for {product.name} - {variant.name} "
+                    f"({variant.color}, size {item.size}): {variant_size.quantity} available"
                 ),
             )
 
@@ -104,6 +112,7 @@ def create_order(db: Session, payload: OrderCreate) -> Order:
             order_id=order.id,
             product_id=product.id,
             variant_id=variant.id,
+            size=item.size,
             quantity=item.quantity,
             price=unit_price,
         )
@@ -153,14 +162,15 @@ def update_order_status(
         # This is the one moment stock actually leaves inventory.
         for item in order.items:
             try:
-                stock_service.deduct_stock(db, item.variant_id, item.quantity)
+                stock_service.deduct_stock(db, item.variant_id, item.size, item.quantity)
             except stock_service.InsufficientStockError as exc:
                 db.rollback()
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=(
                         f"Cannot confirm order: insufficient stock for variant "
-                        f"{exc.variant_id} (requested {exc.requested}, available {exc.available})"
+                        f"{exc.variant_id} size {exc.size} "
+                        f"(requested {exc.requested}, available {exc.available})"
                     ),
                 ) from exc
         order.stock_deducted = True
@@ -169,7 +179,7 @@ def update_order_status(
         # Order had already consumed inventory (was CONFIRMED or later) --
         # give it back.
         for item in order.items:
-            stock_service.restore_stock(db, item.variant_id, item.quantity)
+            stock_service.restore_stock(db, item.variant_id, item.size, item.quantity)
         order.stock_deducted = False
 
     order.status = new_status
@@ -189,7 +199,7 @@ def update_order_status(
 
 
 def list_orders(db: Session, status_filter: str | None = None) -> list[Order]:
-    query = db.query(Order).options(joinedload(Order.items), joinedload(Order.customer))
+    query = db.query(Order).options(joinedload(Order.customer), *_ITEM_LOAD_OPTIONS)
     if status_filter:
         query = query.filter(Order.status == status_filter)
     return query.order_by(Order.created_at.desc()).all()
@@ -200,6 +210,6 @@ def delete_order(db: Session, order: Order) -> None:
     so inventory never silently disappears."""
     if order.stock_deducted:
         for item in order.items:
-            stock_service.restore_stock(db, item.variant_id, item.quantity)
+            stock_service.restore_stock(db, item.variant_id, item.size, item.quantity)
     db.delete(order)
     db.commit()

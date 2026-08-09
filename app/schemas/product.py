@@ -8,14 +8,6 @@ from app.schemas.variant import VariantOut
 from app.schemas.category import CategoryOut
 
 
-class ProductImageOut(BaseModel):
-    id: int
-    image_path: str
-    color: str | None = None
-
-    model_config = {"from_attributes": True}
-
-
 class ProductBase(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     description: str | None = None
@@ -50,10 +42,10 @@ class ProductOut(ProductBase):
     stock: int
     is_out_of_stock: bool
     final_price: Decimal
+    colors: list[str] = []
     created_at: datetime
     updated_at: datetime
     category: CategoryOut | None = None
-    images: list[ProductImageOut] = []
     variants: list[VariantOut] = []
 
     model_config = {"from_attributes": True}
@@ -72,6 +64,7 @@ class ProductListOut(BaseModel):
     category_id: int | None
     material: str | None = None
     season: Season | None = None
+    colors: list[str] = []
     thumbnail: str | None = None
 
     model_config = {"from_attributes": True}

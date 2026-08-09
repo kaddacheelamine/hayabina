@@ -2,16 +2,13 @@
 seed_products.py
 
 Connects to the Storefront API and creates random test products for
-demo/testing purposes -- each with a description, category, material,
-season, discount, and 1-3 "color groups". Each color group is a set of
-1-2 generated placeholder images tagged with that color, plus the
-matching size/quantity variants for that color. This mirrors the real
-admin workflow: upload a color's photos together (tagged with that
-color), then set the sizes available in that color.
+demo/testing purposes, matching the current data model: a product has
+1-3 variants, each with its own unique name, a single color, ONE photo,
+and its own list of sizes with quantities.
 
 No external image service needed -- images are generated locally with
-Pillow (a solid color background + the product name + an angle label),
-so this works even with no internet access beyond your own API.
+Pillow (a solid color background + the variant name), so this works
+even with no internet access beyond your own API.
 
 Usage:
     pip install requests pillow
@@ -27,6 +24,7 @@ Options:
 
 import argparse
 import io
+import itertools
 import random
 import sys
 
@@ -42,7 +40,7 @@ NOUNS = [
     "Sweatpants", "Slippers", "Cardigan", "Sleep Shirt", "Jogger Set",
 ]
 CATEGORIES = ["Pajamas", "Loungewear", "Outerwear", "Accessories", "Footwear"]
-COLORS = ["Black", "White", "Pink", "Navy", "Grey", "Beige", "Red"]
+COLORS = ["Black", "White", "Pink", "Navy", "Grey", "Beige", "Red", "Green"]
 SIZES = ["S", "M", "L", "XL"]
 MATERIALS = ["Cotton", "Wool", "Polyester", "Linen", "Cotton Blend", "Fleece", "Silk"]
 SEASONS = ["SUMMER", "WINTER", "SPRING", "AUTUMN", "ALL_SEASON"]
@@ -55,14 +53,15 @@ DESCRIPTION_TEMPLATES = [
     "Soft to the touch with a relaxed fit that moves with you.",
 ]
 
-IMAGE_BG_COLORS = [
-    (230, 200, 200), (200, 220, 235), (215, 230, 200),
-    (235, 225, 190), (220, 205, 230), (200, 235, 225),
-]
+IMAGE_BG_COLORS = {
+    "Black": (60, 60, 60), "White": (235, 235, 235), "Pink": (235, 200, 210),
+    "Navy": (50, 65, 100), "Grey": (150, 150, 150), "Beige": (225, 210, 180),
+    "Red": (190, 60, 60), "Green": (70, 150, 90),
+}
 
-# Each generated image gets one of these labels stamped on it, so multiple
-# images for the same product are visibly distinguishable in the UI.
-IMAGE_ANGLE_LABELS = ["Front", "Back", "Side", "Detail", "On model"]
+# A global counter guarantees every variant name is unique across the
+# whole seeding run, matching the API's store-wide unique-name constraint.
+_name_counter = itertools.count(1)
 
 
 def log(msg: str) -> None:
@@ -118,51 +117,42 @@ class ApiClient:
         resp.raise_for_status()
         return resp.json()["id"]
 
-    def create_variant(self, product_id: int, color: str, size: str, quantity: int) -> None:
-        payload = {"color": color, "size": size, "quantity": quantity}
+    def create_variant(self, product_id: int, name: str, color: str, sizes: list[dict]) -> int:
+        payload = {"name": name, "color": color, "sizes": sizes}
         resp = self.session.post(
             f"{self.base_url}/api/products/{product_id}/variants", json=payload
         )
         resp.raise_for_status()
+        return resp.json()["id"]
 
-    def upload_images(self, product_id: int, images: list[tuple[bytes, str]], color: str | None = None) -> None:
-        """Uploads several images for the same product/color in a single
-        request. `images` is a list of (image_bytes, filename) tuples.
-        All files in this call get tagged with the same `color` --
-        matching the real admin workflow of uploading one color's photos
-        at a time."""
-        files = [
-            ("files", (filename, image_bytes, "image/png"))
-            for image_bytes, filename in images
-        ]
-        data = {"color": color} if color else {}
-        resp = self.session.post(
-            f"{self.base_url}/api/products/{product_id}/images", files=files, data=data
+    def set_variant_image(self, variant_id: int, image_bytes: bytes, filename: str) -> None:
+        files = {"file": (filename, image_bytes, "image/png")}
+        resp = self.session.put(
+            f"{self.base_url}/api/variants/{variant_id}/image", files=files
         )
         resp.raise_for_status()
 
 
-def generate_placeholder_image(text: str, label: str) -> bytes:
-    """Generates a simple 600x600 PNG: solid random background + product
-    name + a small angle label (e.g. 'Front', 'Back') so multiple images
-    for the same product are visibly distinct."""
-    bg = random.choice(IMAGE_BG_COLORS)
+def generate_variant_image(variant_name: str, color: str) -> bytes:
+    """Generates a simple 600x600 PNG using a background color that
+    actually matches the variant's color name, with the variant name
+    stamped on it."""
+    bg = IMAGE_BG_COLORS.get(color, (200, 200, 200))
+    text_color = (240, 240, 240) if sum(bg) < 380 else (40, 40, 40)
+
     img = Image.new("RGB", (600, 600), color=bg)
     draw = ImageDraw.Draw(img)
 
     try:
-        title_font = ImageFont.truetype("DejaVuSans-Bold.ttf", 36)
-        label_font = ImageFont.truetype("DejaVuSans.ttf", 22)
+        font = ImageFont.truetype("DejaVuSans-Bold.ttf", 32)
     except OSError:
-        title_font = ImageFont.load_default()
-        label_font = title_font
+        font = ImageFont.load_default()
 
-    # Wrap product name across a couple of lines if it's long.
-    words = text.split()
+    words = variant_name.split()
     lines, current = [], ""
     for word in words:
         trial = f"{current} {word}".strip()
-        if draw.textlength(trial, font=title_font) > 520:
+        if draw.textlength(trial, font=font) > 520:
             lines.append(current)
             current = word
         else:
@@ -170,16 +160,12 @@ def generate_placeholder_image(text: str, label: str) -> bytes:
     if current:
         lines.append(current)
 
-    total_height = len(lines) * 44
-    y = (600 - total_height) // 2 - 20
+    total_height = len(lines) * 40
+    y = (600 - total_height) // 2
     for line in lines:
-        w = draw.textlength(line, font=title_font)
-        draw.text(((600 - w) / 2, y), line, fill=(40, 40, 40), font=title_font)
-        y += 44
-
-    # Angle label near the bottom, e.g. "Front" / "Detail".
-    label_w = draw.textlength(label, font=label_font)
-    draw.text(((600 - label_w) / 2, 520), label, fill=(90, 90, 90), font=label_font)
+        w = draw.textlength(line, font=font)
+        draw.text(((600 - w) / 2, y), line, fill=text_color, font=font)
+        y += 40
 
     buffer = io.BytesIO()
     img.save(buffer, format="PNG")
@@ -206,12 +192,20 @@ def random_discount() -> float:
     return round(random.choice([0.10, 0.15, 0.20, 0.25, 0.30, 0.50]), 2)
 
 
+def unique_variant_name(base_name: str, color: str) -> str:
+    """Store-wide unique names are required by the API -- append a running
+    counter so re-runs (or many variants sharing a base product name +
+    color) never collide."""
+    n = next(_name_counter)
+    return f"{base_name} - {color} #{n}"
+
+
 def seed(client: ApiClient, count: int) -> None:
     category_ids = {name: client.get_or_create_category(name) for name in CATEGORIES}
     log(f"Categories ready: {list(category_ids.keys())}")
 
     for i in range(1, count + 1):
-        name = random_product_name()
+        base_name = random_product_name()
         description = random_description()
         price = random_price()
         category_name = random.choice(CATEGORIES)
@@ -221,40 +215,32 @@ def seed(client: ApiClient, count: int) -> None:
         discount_percentage = random_discount()
 
         product_id = client.create_product(
-            name, description, price, category_id, material, season, discount_percentage
+            base_name, description, price, category_id, material, season, discount_percentage
         )
         discount_note = f", {int(discount_percentage * 100)}% off" if discount_percentage else ""
         log(
-            f"[{i}/{count}] Created product #{product_id}: '{name}' "
+            f"[{i}/{count}] Created product #{product_id}: '{base_name}' "
             f"({category_name}, {material}, {season}, ${price}{discount_note})"
         )
 
-        # 1-3 color groups per product. Each color group = its own set of
-        # images (tagged with that color) + its own set of size variants --
-        # this mirrors the real workflow: a "Red" pajama and a "Green"
-        # pajama are visually distinct products even though they share a
-        # name/price/description, so each gets its own photos and its own
-        # available sizes.
-        num_colors = random.randint(1, 3)
-        colors = random.sample(COLORS, k=num_colors)
+        # 1-3 variants per product, each its own color + unique name +
+        # its own sizes + its own single photo.
+        num_variants = random.randint(1, 3)
+        colors = random.sample(COLORS, k=num_variants)
 
         for color in colors:
-            # 1-3 sizes available in this color, each with its own stock.
-            sizes_for_color = random.sample(SIZES, k=random.randint(1, len(SIZES)))
-            for size in sizes_for_color:
-                quantity = random.randint(0, 20)
-                client.create_variant(product_id, color, size, quantity)
-            log(f"    color '{color}': sizes {sizes_for_color}")
-
-            # 1-2 images for this color, uploaded together tagged with it.
-            num_images = random.randint(1, 2)
-            labels = random.sample(IMAGE_ANGLE_LABELS, k=num_images)
-            images = [
-                (generate_placeholder_image(f"{name} ({color})", label), f"product_{product_id}_{color}_{j}.png")
-                for j, label in enumerate(labels)
+            variant_name = unique_variant_name(base_name, color)
+            sizes_for_variant = random.sample(SIZES, k=random.randint(1, len(SIZES)))
+            sizes_payload = [
+                {"size": size, "quantity": random.randint(0, 20)} for size in sizes_for_variant
             ]
-            client.upload_images(product_id, images, color=color)
-            log(f"        uploaded {len(images)} '{color}' images: {', '.join(labels)}")
+
+            variant_id = client.create_variant(product_id, variant_name, color, sizes_payload)
+            image_bytes = generate_variant_image(variant_name, color)
+            client.set_variant_image(variant_id, image_bytes, f"variant_{variant_id}.png")
+
+            sizes_desc = ", ".join(f"{s['size']}x{s['quantity']}" for s in sizes_payload)
+            log(f"    variant '{variant_name}' ({color}): {sizes_desc} + image")
 
 
 def main():

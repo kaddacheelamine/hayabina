@@ -11,12 +11,13 @@ from app.database import Base
 
 class Product(Base):
     """
-    NOTE ON STOCK:
-    We intentionally do NOT store a separate `stock` column on Product.
-    Total stock is always derived from the sum of its ProductVariant
-    quantities, so there is a single source of truth and no risk of the
-    product-level and variant-level numbers drifting apart. The `stock`
-    property below is what gets serialized in API responses.
+    NOTE ON STOCK AND IMAGES:
+    Stock and images both live on variants now, not on Product directly.
+    - `stock` sums every VariantSize.quantity across all of this
+      product's variants -- one source of truth, no drift.
+    - There is no separate product-level image list: a product's
+      "gallery" is simply the collection of each of its variants' single
+      image (see the `images` property below, which just gathers those).
     """
 
     __tablename__ = "products"
@@ -55,16 +56,13 @@ class Product(Base):
     )
 
     category: Mapped["Category"] = relationship(back_populates="products")
-    images: Mapped[list["ProductImage"]] = relationship(
-        back_populates="product", cascade="all, delete-orphan"
-    )
     variants: Mapped[list["ProductVariant"]] = relationship(
         back_populates="product", cascade="all, delete-orphan"
     )
 
     @hybrid_property
     def stock(self) -> int:
-        return sum(v.quantity for v in self.variants)
+        return sum(size.quantity for variant in self.variants for size in variant.sizes)
 
     @property
     def is_out_of_stock(self) -> bool:
@@ -76,3 +74,21 @@ class Product(Base):
         as the "real" price and can show `price` crossed-out when
         discount_percentage > 0."""
         return (self.price * (Decimal("1") - self.discount_percentage)).quantize(Decimal("0.01"))
+
+    @property
+    def colors(self) -> list[str]:
+        """Convenience list of this product's distinct variant colors."""
+        seen = []
+        for v in self.variants:
+            if v.color not in seen:
+                seen.append(v.color)
+        return seen
+
+    @property
+    def thumbnail(self) -> str | None:
+        """First variant's image, for list views that just need one
+        preview picture rather than the full gallery."""
+        for v in self.variants:
+            if v.image_path:
+                return v.image_path
+        return None

@@ -62,4 +62,4 @@ def delete_product(product_id: int, db: Session = Depends(get_db), _=Depends(get
 def add_variant(
     product_id: int, payload: VariantCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)
 ):
-    return product_service.create_variant(db, product_id, payload.color, payload.size, payload.quantity)
+    return product_service.create_variant(db, product_id, payload.name, payload.color, payload.sizes)

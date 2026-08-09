@@ -10,13 +10,17 @@ from app.schemas.customer import CustomerBase, CustomerOut
 class OrderItemCreate(BaseModel):
     product_id: int
     variant_id: int
+    size: str = Field(min_length=1, max_length=32)
     quantity: int = Field(ge=1)
 
 
 class OrderItemOut(BaseModel):
     id: int
     product_id: int
+    product_name: str
     variant_id: int
+    variant_name: str
+    size: str
     quantity: int
     price: Decimal
 
