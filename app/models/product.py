@@ -32,6 +32,9 @@ class Product(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    # Internal purchase/cost price. Used for inventory/profit calculations and   
+    # should not be exposed as the customer-facing selling price.\n    
+    purchase_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, default=Decimal("0"))
     category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"), nullable=True)
 
     # Free-text material info (e.g. "Cotton", "Wool", "100% Polyester").

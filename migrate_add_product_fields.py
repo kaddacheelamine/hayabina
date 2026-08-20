@@ -1,7 +1,7 @@
 """
 migrate_add_product_fields.py
 
-Adds the new `material`, `season`, and `discount_percentage` columns to an
+Adds the new `material`, `season`, `discount_percentage`, and `purchase_price` columns to an
 EXISTING `products` table. This is needed because SQLAlchemy's
 `Base.metadata.create_all()` (used in app/main.py) only creates tables that
 don't exist yet -- it does NOT add new columns to a table that's already
@@ -33,6 +33,7 @@ NEW_COLUMNS = {
     "material": "VARCHAR(128)",
     "season": "VARCHAR(16)",
     "discount_percentage": "NUMERIC(3, 2) NOT NULL DEFAULT 0",
+    "purchase_price": "NUMERIC(10, 2) NOT NULL DEFAULT 0",
 }
 
 

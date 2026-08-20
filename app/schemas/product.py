@@ -12,6 +12,7 @@ class ProductBase(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     description: str | None = None
     price: Decimal = Field(ge=0)
+    purchase_price: Decimal = Field(ge=0)
     category_id: int | None = None
     material: str | None = Field(default=None, max_length=128, examples=["Cotton", "Wool", "100% Polyester"])
     season: Season | None = None
@@ -31,6 +32,7 @@ class ProductUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
     price: Decimal | None = Field(default=None, ge=0)
+    purchase_price: Decimal | None = Field(default=None, ge=0)
     category_id: int | None = None
     material: str | None = Field(default=None, max_length=128)
     season: Season | None = None
@@ -57,6 +59,7 @@ class ProductListOut(BaseModel):
     id: int
     name: str
     price: Decimal
+    purchase_price: Decimal
     final_price: Decimal
     discount_percentage: Decimal
     stock: int

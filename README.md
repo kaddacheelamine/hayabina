@@ -45,7 +45,7 @@ A "Red" version of a product and a "Green" version are two separate
 variants, even though they share the parent product's name/price/description.
 
 ```
-Product (name, price, description, material, season, discount...)
+Product (name, price, purchase_price, description, material, season, discount...)
   └─ Variant (name [unique store-wide], color, one image)
        └─ sizes: [{size, quantity}, {size, quantity}, ...]
 ```
@@ -99,6 +99,7 @@ kept or removed).
   "id": 1,
   "name": "Classic Pajama Set",
   "price": "49.99",
+  "purchase_price": "30.00",
   "colors": ["Red", "Green"],
   "stock": 22,
   "variants": [
@@ -216,9 +217,9 @@ automatically updates what a section shows, with no extra step).
 
 ## Product fields: material, season, discount
 
-Products carry three extra fields beyond the original spec:
+Products carry four extra fields beyond the original spec:
 
-- **`material`** -- free text (e.g. "Cotton", "Wool", "100% Polyester").
+- **`purchase_price`** -- internal purchase/cost price of the product; this is not the customer-facing selling price.\n- **`material`** -- free text (e.g. "Cotton", "Wool", "100% Polyester").
 - **`season`** -- one of `SUMMER`, `WINTER`, `SPRING`, `AUTUMN`, `ALL_SEASON`, or `null`.
 - **`discount_percentage`** -- a ratio from `0` (no discount) to `1` (100% off),
   e.g. `0.20` = 20% off. Validated at the API layer (rejects anything outside 0-1).
