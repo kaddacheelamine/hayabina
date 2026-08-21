@@ -10,7 +10,8 @@ from app.models.order_status_history import OrderStatusHistory
 from app.models.settings import SiteSetting
 from app.models.section import Section, section_categories
 from app.models.site_info import SiteInfo
-from app.models.enums import DeliveryType, OrderStatus, AdminRole, Season
+from app.models.expense import Expense
+from app.models.enums import DeliveryType, OrderStatus, AdminRole, Season, ExpenseType
 
 __all__ = [
     "Admin",
@@ -26,8 +27,10 @@ __all__ = [
     "Section",
     "section_categories",
     "SiteInfo",
+    "Expense",
     "DeliveryType",
     "OrderStatus",
     "AdminRole",
     "Season",
+    "ExpenseType",
 ]

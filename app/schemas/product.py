@@ -12,7 +12,6 @@ class ProductBase(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     description: str | None = None
     price: Decimal = Field(ge=0)
-    purchase_price: Decimal = Field(ge=0)
     category_id: int | None = None
     material: str | None = Field(default=None, max_length=128, examples=["Cotton", "Wool", "100% Polyester"])
     season: Season | None = None
@@ -25,7 +24,11 @@ class ProductBase(BaseModel):
 
 
 class ProductCreate(ProductBase):
-    pass
+    # Cost/purchase price. Kept off ProductBase (and so off the public
+    # ProductOut/ProductListOut below) so it's never returned by the public,
+    # unauthenticated GET endpoints -- only accepted here on admin-only
+    # create/update, and surfaced back via ProductAdminOut.
+    purchase_price: Decimal | None = Field(default=None, ge=0)
 
 
 class ProductUpdate(BaseModel):
@@ -53,13 +56,21 @@ class ProductOut(ProductBase):
     model_config = {"from_attributes": True}
 
 
+class ProductAdminOut(ProductOut):
+    """Same as ProductOut but also includes cost/profit data. Only used as
+    the response_model for admin-protected endpoints (create/update), never
+    for the public list/get endpoints."""
+
+    purchase_price: Decimal | None = None
+    profit: Decimal | None = None
+
+
 class ProductListOut(BaseModel):
     """Lighter payload for list views."""
 
     id: int
     name: str
     price: Decimal
-    purchase_price: Decimal
     final_price: Decimal
     discount_percentage: Decimal
     stock: int

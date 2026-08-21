@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.dependencies import get_db, get_current_admin
 from app.models.product import Product
-from app.schemas.product import ProductCreate, ProductUpdate, ProductOut
+from app.schemas.product import ProductCreate, ProductUpdate, ProductOut, ProductAdminOut
 from app.schemas.variant import VariantCreate, VariantUpdate, VariantOut
 from app.services import product_service
 
@@ -26,7 +26,16 @@ def get_product(product_id: int, db: Session = Depends(get_db)):
     return product_service.get_product_or_404(db, product_id)
 
 
-@router.post("", response_model=ProductOut, status_code=status.HTTP_201_CREATED)
+@router.get("/{product_id}/admin", response_model=ProductAdminOut)
+def get_product_admin(
+    product_id: int, db: Session = Depends(get_db), _=Depends(get_current_admin)
+):
+    """Same as GET /{product_id} but includes purchase_price/profit --
+    for the admin dashboard's edit form. Requires admin auth."""
+    return product_service.get_product_or_404(db, product_id)
+
+
+@router.post("", response_model=ProductAdminOut, status_code=status.HTTP_201_CREATED)
 def create_product(payload: ProductCreate, db: Session = Depends(get_db), _=Depends(get_current_admin)):
     product = Product(**payload.model_dump())
     db.add(product)
@@ -35,7 +44,7 @@ def create_product(payload: ProductCreate, db: Session = Depends(get_db), _=Depe
     return product
 
 
-@router.put("/{product_id}", response_model=ProductOut)
+@router.put("/{product_id}", response_model=ProductAdminOut)
 def update_product(
     product_id: int, payload: ProductUpdate, db: Session = Depends(get_db), _=Depends(get_current_admin)
 ):

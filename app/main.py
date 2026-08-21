@@ -7,7 +7,7 @@ from app.database import Base, engine, SessionLocal
 from app import models  # noqa: F401  -- ensures all models are registered before create_all
 from app.routers import (
     auth, categories, products, variants, orders, uploads, dashboard,
-    settings as settings_router, sections, store_info,
+    settings as settings_router, sections, store_info, expenses,
 )
 from app.services.auth_service import ensure_default_admin
 
@@ -52,6 +52,7 @@ app.include_router(dashboard.router)
 app.include_router(settings_router.router)
 app.include_router(sections.router)
 app.include_router(store_info.router)
+app.include_router(expenses.router)
 
 
 @app.get("/api/health")

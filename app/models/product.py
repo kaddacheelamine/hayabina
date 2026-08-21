@@ -32,9 +32,14 @@ class Product(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
-    # Internal purchase/cost price. Used for inventory/profit calculations and   
-    # should not be exposed as the customer-facing selling price.\n    
-    purchase_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, default=Decimal("0"))
+
+    # Cost price (what the store paid to acquire/produce the item), as
+    # opposed to `price` which is the sale price shown to customers.
+    # Nullable since older products won't have this set, and not every
+    # store necessarily tracks cost. Used for profit-margin reporting,
+    # never exposed on public-facing endpoints.
+    purchase_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+
     category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"), nullable=True)
 
     # Free-text material info (e.g. "Cotton", "Wool", "100% Polyester").
@@ -77,6 +82,13 @@ class Product(Base):
         as the "real" price and can show `price` crossed-out when
         discount_percentage > 0."""
         return (self.price * (Decimal("1") - self.discount_percentage)).quantize(Decimal("0.01"))
+
+    @property
+    def profit(self) -> Decimal | None:
+        """final_price minus purchase_price. None if purchase_price isn't set."""
+        if self.purchase_price is None:
+            return None
+        return (self.final_price - self.purchase_price).quantize(Decimal("0.01"))
 
     @property
     def colors(self) -> list[str]:
