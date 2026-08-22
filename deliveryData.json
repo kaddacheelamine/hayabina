@@ -54,7 +54,7 @@
           "name": "Aoulef - أولف"
         }
       ],
-      "price": 1300,
+      "price": 1200,
       "offices": [
         {
           "commune": "Adrar - أدرار",
@@ -522,7 +522,13 @@
           "address": "Cité meddour kchida en face les batiments 500",
           "desk": 450,
           "home": 900
+        },{
+          "commune": "Barika",
+          "address": "Quartier CHAABANI , en face notaire Bachir Farhani, a coté Algerie Telecom",
+          "desk": 450,
+          "home": 900
         }
+
       ]
     },
     {
@@ -2965,7 +2971,7 @@
         },
         {
           "commune": "Constantine - قسنطينة",
-          "address": "En face de Sarl Natura pro Algérie/entre deux salles des fêtés el baraka et méga",
+          "address": "Ali Mendjeli En face de Sarl Natura pro Algérie/entre deux salles des fêtés el baraka et méga",
           "desk": 450,
           "home": 900
         }
@@ -3630,8 +3636,8 @@
           "home": 700
         },
         {
-          "commune": "Arzew - أرزيو",
-          "address": "EN FACE ANCIEN DAIRA D’ARZEW , Rue KADIR ELHABIB N° 04, Oran",
+          "commune": "Essabah",
+          "address": "Coopérative Immobilière El Salam, N° D3, Lotissement 02, Îlot 51 (Partie 02), Îlot 292, Sidi Chami, Cité Essabah, à côté du terminus du tramway.",
           "desk": 400,
           "home": 700
         }
